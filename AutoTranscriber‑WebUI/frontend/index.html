@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoTranscriber WebUI</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: "Microsoft YaHei", system-ui, sans-serif;
+            background-color: #1e1e2e;
+            color: #e2e2e2;
+            padding: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 36px;
+            margin-bottom: 24px;
+            color: #ffffff;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media(max-width:860px){
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+        .card {
+            background: #2a2a3c;
+            border-radius: 12px;
+            padding: 22px;
+        }
+        .card h2 {
+            font-size:22px;
+            margin-bottom:16px;
+            color:#f0f0f0;
+        }
+        h3{
+            font-size:18px;
+            margin:10px 0;
+        }
+        .drop-zone {
+            border: 2px dashed #56567a;
+            border-radius:10px;
+            padding:42px 20px;
+            text-align:center;
+            transition: all 0.22s ease;
+            cursor:pointer;
+        }
+        .drop-zone.active {
+            border-color:#6399ff;
+            background-color:#2c344b;
+        }
+        .drop-zone p {
+            color:#b4b4cc;
+            font-size:18px;
+        }
+        #fileInput {
+            display:none;
+        }
+        .btn {
+            background-color:#4169c9;
+            color:white;
+            border:none;
+            padding:12px 22px;
+            border-radius:8px;
+            cursor:pointer;
+            font-size:16px;
+            margin-top:12px;
+        }
+        .btn:hover {
+            background-color:#537de0;
+        }
+        .btn-danger {
+            background-color:#c24444;
+        }
+        .btn:disabled {
+            opacity:0.55;
+            cursor:not-allowed;
+        }
+
+        .file-item {
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            background:#333348;
+            padding:14px 16px;
+            border-radius:8px;
+            margin-bottom:10px;
+        }
+        .file-name {
+            overflow:hidden;
+            text-overflow:ellipsis;
+            white-space:nowrap;
+            max-width:60%;
+        }
+        .log-box {
+            background-color:#171723;
+            padding:14px;
+            border-radius:8px;
+            height:300px;
+            overflow-y:auto;
+            font-family:Consolas,monospace;
+            font-size:14px;
+            white-space:pre-wrap;
+        }
+        .log-error {
+            color:#ff7c7c;
+        }
+        .log-info {
+            color:#86c8ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>AutoTranscriber WebUI</h1>
+    <div class="container">
+        <div class="card">
+            <h2>上传音频文件（拖拽或点击）</h2>
+            <div id="dropZone" class="drop-zone">
+                <p>将音频拖拽到此区域<br>或者点击选择文件</p>
+                <button class="btn">选择本地文件</button>
+                <input id="fileInput" type="file" accept=".mp3,.wav,.flac,.m4a,.ogg">
+            </div>
+            <div style="margin-top:24px;">
+                <h3>已上传文件</h3>
+                <div id="inputFileList"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>任务日志</h2>
+            <div id="logBox" class="log-box"></div>
+            <div style="margin-top:20px;">
+                <h3>输出结果</h3>
+                <div id="outputFileList"></div>
+            </div>
+        </div>
+    </div>
+
+<script>
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const logBox = document.getElementById('logBox');
+const inputFileList = document.getElementById('inputFileList');
+const outputFileList = document.getElementById('outputFileList');
+
+dropZone.addEventListener('click',()=>fileInput.click());
+
+dropZone.addEventListener('dragover',(e)=>{
+    e.preventDefault();
+    dropZone.classList.add('active');
+})
+dropZone.addEventListener('dragleave',()=>{
+    dropZone.classList.remove('active');
+})
+dropZone.addEventListener('drop',async(e)=>{
+    e.preventDefault();
+    dropZone.classList.remove('active');
+    const files = e.dataTransfer.files;
+    if(files.length>0){
+        await uploadFile(files[0]);
+    }
+})
+
+fileInput.addEventListener('change',async()=>{
+    if(fileInput.files.length>0){
+        await uploadFile(fileInput.files[0]);
+    }
+})
+
+function appendLog(text,isError=false){
+    const div = document.createElement('div');
+    div.className = isError?"log-error":"log-info";
+    div.textContent = text;
+    logBox.appendChild(div);
+    logBox.scrollTop = logBox.scrollHeight;
+}
+
+async function uploadFile(file){
+    appendLog(`正在上传: ${file.name}`);
+    const fd = new FormData();
+    fd.append("file",file);
+    try{
+        const res = await fetch("/api/audio/upload",{
+            method:"POST",
+            body:fd
+        })
+        const json = await res.json();
+        appendLog(`上传完成: ${json.input_filename}`);
+        await refreshInputList();
+    }catch(err){
+        appendLog("上传失败:"+err.message,true);
+    }
+}
+
+async function refreshInputList(){
+    const resp = await fetch("/api/input/list");
+    const data = await resp.json();
+    inputFileList.innerHTML = "";
+    const fileArr = data.files;
+    fileArr.forEach(item=>{
+        const filename = item.name;
+        const div = document.createElement("div");
+        div.className="file-item";
+        div.innerHTML = `
+            <span class="file-name">${filename}</span>
+            <div>
+                <button class="btn runBtn" data-name="${filename}">开始转写</button>
+                <button class="btn delBtn btn-danger" data-name="${filename}" style="margin-left:6px;">删除</button>
+            </div>
+        `;
+        inputFileList.appendChild(div);
+    })
+    document.querySelectorAll(".runBtn").forEach(btn=>{
+        btn.onclick = ()=>{
+            const name = btn.dataset.name;
+            appendLog(`启动转写任务: ${name}`);
+            startTranscribe(name);
+        }
+    })
+    document.querySelectorAll(".delBtn").forEach(btn=>{
+        btn.onclick = async()=>{
+            await fetch(`/api/file/delete?folder=input&filename=${encodeURIComponent(btn.dataset.name)}`,{method:"POST"});
+            await refreshInputList();
+        }
+    })
+}
+
+async function refreshOutputList(){
+    const resp = await fetch("/api/output/list");
+    const data = await resp.json();
+    outputFileList.innerHTML = "";
+    const fileArr = data.files;
+    fileArr.forEach(item=>{
+        const filename = item.name;
+        const div = document.createElement("div");
+        div.className="file-item";
+        div.innerHTML = `
+            <span class="file-name">${filename}</span>
+            <div>
+                <a class="btn" href="/api/output/download?filename=${encodeURIComponent(filename)}" target="_blank">下载</a>
+                <button class="btn delBtnOut btn-danger" data-name="${filename}" style="margin-left:6px;">删除</button>
+            </div>
+        `;
+        outputFileList.appendChild(div);
+    })
+    document.querySelectorAll(".delBtnOut").forEach(btn=>{
+        btn.onclick = async()=>{
+            await fetch(`/api/file/delete?folder=output&filename=${encodeURIComponent(btn.dataset.name)}`,{method:"POST"});
+            await refreshOutputList();
+        }
+    })
+}
+
+function startTranscribe(filename){
+    if(!filename){
+        appendLog("❌文件名无效！",true);
+        return;
+    }
+    const url = `/api/transcribe/stream?input_filename=${encodeURIComponent(filename)}`;
+    const evtsrc = new EventSource(url);
+
+    evtsrc.onmessage = (ev)=>{
+        const line = ev.data.trim();
+        if(line.startsWith("ERROR|")){
+            appendLog(line.replace("ERROR|",""),true);
+            evtsrc.close();
+        }else if(line.startsWith("STDOUT|")){
+            appendLog(line.replace("STDOUT|",""));
+        }else if(line.startsWith("DONE|")){
+            appendLog("✅任务完成！MIDI已生成");
+            evtsrc.close();
+            refreshOutputList();
+        }
+    }
+
+    evtsrc.onerror = ()=>{
+        appendLog("🔴SSE连接断开",true);
+        evtsrc.close();
+    }
+}
+
+window.onload = async()=>{
+    await refreshInputList();
+    await refreshOutputList();
+}
+</script>
+</body>
+</html>

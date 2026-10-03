@@ -1,0 +1,4 @@
+本项目仅为对项目https://github.com/GuyueHermit/AutoTranscriber的WebUI适配
+将此文件夹与AutoTranscriber放置在同一目录下，启动start_ui.bat就可以打开web页面
+拥有可视化窗口 相比于原项目使用命令行的使用方式更加适合一般人
+原项目还有分离人声与音轨的功能 但考虑到该功能需要对环境进行额外配置 无法通过WebUI一键完成  所以这里不对该功能进行适配
